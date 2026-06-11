@@ -89,15 +89,16 @@ fi
 
 PACKAGES=(
   sdl3
-  sdl3-image
+  "sdl3-image[png]"
   sdl3-ttf
-  sdl3-mixer
+  "sdl3-mixer[libvorbis]"
   sdl3-gfx
 )
 
 echo "Installing SDL3 packages for ${VCPKG_TRIPLET}"
 "${VCPKG_EXE}" install \
   --classic \
+  --recurse \
   --triplet "${VCPKG_TRIPLET}" \
   --overlay-ports="${ROOT_DIR}/ports" \
   "${PACKAGES[@]}"

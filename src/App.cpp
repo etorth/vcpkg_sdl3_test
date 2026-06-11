@@ -21,11 +21,20 @@ App::App() {
 }
 
 App::~App() {
+  if (musicTrack_) {
+    MIX_DestroyTrack(musicTrack_);
+  }
   if (beepTrack_) {
     MIX_DestroyTrack(beepTrack_);
   }
+  if (music_) {
+    MIX_DestroyAudio(music_);
+  }
   if (beep_) {
     MIX_DestroyAudio(beep_);
+  }
+  for (SDL_Texture* texture : apngFrames_) {
+    SDL_DestroyTexture(texture);
   }
   if (textTexture_) {
     SDL_DestroyTexture(textTexture_);
@@ -107,6 +116,41 @@ void App::loadResources() {
     throw sdlError("SDL_CreateTextureFromSurface failed for image");
   }
 
+  const auto apngPath = resourcePath("elephant.png");
+  SDL_IOStream* apngStream = SDL_IOFromFile(apngPath.string().c_str(), "rb");
+  if (!apngStream) {
+    throw sdlError("SDL_IOFromFile failed for " + apngPath.string());
+  }
+  IMG_Animation* apng = IMG_LoadAPNGAnimation_IO(apngStream);
+  SDL_CloseIO(apngStream);
+  if (!apng) {
+    throw sdlError("IMG_LoadAPNGAnimation_IO failed for " + apngPath.string());
+  }
+  if (apng->count <= 0 || !apng->frames || !apng->delays) {
+    IMG_FreeAnimation(apng);
+    throw std::runtime_error("APNG has no frames: " + apngPath.string());
+  }
+
+  apngWidth_ = apng->w;
+  apngHeight_ = apng->h;
+  apngFrames_.reserve(static_cast<size_t>(apng->count));
+  apngFrameDelays_.reserve(static_cast<size_t>(apng->count));
+  for (int i = 0; i < apng->count; ++i) {
+    SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer_, apng->frames[i]);
+    if (!texture) {
+      IMG_FreeAnimation(apng);
+      throw sdlError("SDL_CreateTextureFromSurface failed for APNG frame");
+    }
+    SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+    SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
+    apngFrames_.push_back(texture);
+
+    const int delayMs = std::max(apng->delays[i], 20);
+    apngFrameDelays_.push_back(delayMs);
+    apngTotalDelayMs_ += delayMs;
+  }
+  IMG_FreeAnimation(apng);
+
   if (mixer_) {
     const auto soundPath = resourcePath("beep.wav");
     beep_ = MIX_LoadAudio(mixer_, soundPath.string().c_str(), true);
@@ -121,6 +165,22 @@ void App::loadResources() {
     if (!MIX_SetTrackAudio(beepTrack_, beep_)) {
       throw sdlError("MIX_SetTrackAudio failed");
     }
+
+    const auto musicPath = resourcePath("sound.ogg");
+    music_ = MIX_LoadAudio(mixer_, musicPath.string().c_str(), false);
+    if (!music_) {
+      throw sdlError("MIX_LoadAudio failed for " + musicPath.string());
+    }
+
+    musicTrack_ = MIX_CreateTrack(mixer_);
+    if (!musicTrack_) {
+      throw sdlError("MIX_CreateTrack failed for looping OGG");
+    }
+    if (!MIX_SetTrackAudio(musicTrack_, music_)) {
+      throw sdlError("MIX_SetTrackAudio failed for looping OGG");
+    }
+    MIX_SetTrackGain(musicTrack_, 0.45f);
+    playMusicLoop();
   }
 
   const auto fontPath = findFont();
@@ -204,9 +264,37 @@ void App::render() {
   stringRGBA(renderer_, 72, 72, "SDL3_gfx primitives", 255, 255, 255, 255);
   stringRGBA(renderer_, 72, 476, "Space: play SDL3_mixer sound   Esc: quit", 196, 210, 232, 255);
 
+  renderApng(ticks);
   renderTtfText(72.0f, 136.0f);
 
   SDL_RenderPresent(renderer_);
+}
+
+void App::renderApng(Uint64 ticks) const {
+  if (apngFrames_.empty() || apngTotalDelayMs_ <= 0) {
+    return;
+  }
+
+  int frameIndex = 0;
+  int elapsedMs = static_cast<int>(ticks % static_cast<Uint64>(apngTotalDelayMs_));
+  while (frameIndex + 1 < static_cast<int>(apngFrameDelays_.size()) &&
+         elapsedMs >= apngFrameDelays_[frameIndex]) {
+    elapsedMs -= apngFrameDelays_[frameIndex];
+    ++frameIndex;
+  }
+
+  const float displayWidth = 144.0f;
+  const float displayHeight = displayWidth * static_cast<float>(apngHeight_) /
+                              static_cast<float>(apngWidth_);
+  SDL_FRect dst{746.0f, 326.0f, displayWidth, displayHeight};
+  roundedBoxRGBA(renderer_, dst.x - 10.0f, dst.y - 10.0f,
+                 dst.x + dst.w + 10.0f, dst.y + dst.h + 26.0f,
+                 14, 18, 22, 34, 180);
+  SDL_RenderTexture(renderer_, apngFrames_[static_cast<size_t>(frameIndex)], nullptr, &dst);
+  rectangleRGBA(renderer_, dst.x - 1.0f, dst.y - 1.0f,
+                dst.x + dst.w + 1.0f, dst.y + dst.h + 1.0f,
+                185, 230, 255, 255);
+  stringRGBA(renderer_, dst.x + 12.0f, dst.y + dst.h + 10.0f, "APNG elephant", 185, 230, 255, 255);
 }
 
 void App::renderTtfText(float x, float y) const {
@@ -223,6 +311,26 @@ void App::playSound() const {
   if (beepTrack_) {
     MIX_PlayTrack(beepTrack_, 0);
   }
+}
+
+void App::playMusicLoop() const {
+  if (!musicTrack_) {
+    return;
+  }
+
+  SDL_PropertiesID options = SDL_CreateProperties();
+  if (!options) {
+    throw sdlError("SDL_CreateProperties failed for looping OGG");
+  }
+  if (!SDL_SetNumberProperty(options, MIX_PROP_PLAY_LOOPS_NUMBER, -1)) {
+    SDL_DestroyProperties(options);
+    throw sdlError("SDL_SetNumberProperty failed for looping OGG");
+  }
+  if (!MIX_PlayTrack(musicTrack_, options)) {
+    SDL_DestroyProperties(options);
+    throw sdlError("MIX_PlayTrack failed for looping OGG");
+  }
+  SDL_DestroyProperties(options);
 }
 
 std::filesystem::path App::resourcePath(const std::string& name) const {

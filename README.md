@@ -7,8 +7,9 @@ It exercises:
 - SDL3 window/render/audio initialization
 - SDL3_gfx drawing primitives
 - SDL3_image image loading
+- SDL3_image APNG animation loading
 - SDL3_ttf text rendering
-- SDL3_mixer WAV playback
+- SDL3_mixer WAV playback and looping OGG playback
 
 Build from a fresh checkout:
 
