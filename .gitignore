@@ -1,0 +1,5 @@
+build/
+.vcpkg/
+vcpkg/
+vcpkg_installed/
+
