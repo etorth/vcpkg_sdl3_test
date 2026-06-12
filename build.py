@@ -65,7 +65,24 @@ def parse_args():
         action="store_true",
         help="Install platform system dependencies before building.",
     )
+    parser.add_argument(
+        "--vcpkg-prefix",
+        type=Path,
+        help="Use the vcpkg installation at this prefix instead of bootstrapping a local one.",
+    )
     return parser.parse_args()
+
+
+def confirm_system_package_install(packages):
+    package_list = " ".join(packages)
+    try:
+        answer = input(f"Install system packages system-wide: {package_list}. Confirm [y/N]: ")
+    except EOFError:
+        answer = ""
+
+    if answer.strip().lower() not in ("y", "yes"):
+        print("Aborted system package installation.", file=sys.stderr)
+        sys.exit(1)
 
 
 def install_platform_dependencies(*, install_deps):
@@ -88,24 +105,40 @@ def install_platform_dependencies(*, install_deps):
     if not missing:
         return
 
-    log(f"Installing system packages required by vcpkg/SDL3: {' '.join(missing)}")
     if getattr(os, "geteuid", lambda: -1)() == 0:
+        confirm_system_package_install(missing)
+        log(f"Installing system packages required by vcpkg/SDL3: {' '.join(missing)}")
         run(["apt", "update"])
         env = os.environ.copy()
         env["DEBIAN_FRONTEND"] = "noninteractive"
         run(["apt", "install", "-y", *missing], env=env)
     elif shutil.which("sudo"):
+        confirm_system_package_install(missing)
+        log(f"Installing system packages required by vcpkg/SDL3: {' '.join(missing)}")
         run(["sudo", "apt", "update"])
-        run(["sudo", "env", "DEBIAN_FRONTEND=noninteractive", "apt", "install", "-y", *missing])
+        run(
+            [
+                "sudo",
+                "env",
+                "DEBIAN_FRONTEND=noninteractive",
+                "apt",
+                "install",
+                "-y",
+                *missing,
+            ]
+        )
     else:
         print(f"Missing system packages: {' '.join(missing)}", file=sys.stderr)
-        print("Install them manually, or rerun with --install-deps.", file=sys.stderr)
+        print("Install them manually.", file=sys.stderr)
         sys.exit(1)
 
 
 def missing_tool_message(description, *, install_deps):
     if install_deps:
-        return f"Missing required tool after dependency installation: {description}. Install it manually."
+        return (
+            f"Missing required tool after dependency installation: {description}. "
+            "Install it manually."
+        )
     return f"Missing required tool: {description}. Install it or rerun with --install-deps."
 
 
@@ -129,12 +162,7 @@ def vcpkg_toolchain(vcpkg_root):
     return vcpkg_root / "scripts/buildsystems/vcpkg.cmake"
 
 
-def find_vcpkg_in_path():
-    vcpkg_path = shutil.which("vcpkg") or shutil.which("vcpkg.exe")
-    if not vcpkg_path:
-        return None
-
-    vcpkg = Path(vcpkg_path).resolve()
+def validate_vcpkg(vcpkg, vcpkg_root, source):
     try:
         version_result = subprocess.run(
             [str(vcpkg), "version"],
@@ -143,22 +171,41 @@ def find_vcpkg_in_path():
             check=False,
         )
     except OSError as error:
-        print(f"Ignoring invalid vcpkg in PATH ({vcpkg}): {error}", file=sys.stderr)
-        return None
+        print(f"Invalid {source} ({vcpkg}): {error}", file=sys.stderr)
+        sys.exit(1)
 
     if version_result.returncode != 0:
-        print(f"Ignoring invalid vcpkg in PATH ({vcpkg}): `vcpkg version` failed", file=sys.stderr)
-        return None
+        print(f"Invalid {source} ({vcpkg}): `vcpkg version` failed", file=sys.stderr)
+        sys.exit(1)
 
-    vcpkg_root = vcpkg.parent
     if vcpkg_toolchain(vcpkg_root).exists():
         return vcpkg, vcpkg_root
 
-    print(
-        f"Ignoring invalid vcpkg in PATH ({vcpkg}): missing {vcpkg_toolchain(vcpkg_root)}",
-        file=sys.stderr,
-    )
-    return None
+    print(f"Invalid {source} ({vcpkg_root}): missing {vcpkg_toolchain(vcpkg_root)}", file=sys.stderr)
+    sys.exit(1)
+
+
+def resolve_vcpkg_prefix(vcpkg_prefix):
+    prefix = vcpkg_prefix.expanduser().resolve()
+    if prefix.is_file():
+        vcpkg = prefix
+        vcpkg_root = prefix.parent
+    else:
+        vcpkg_root = prefix
+        vcpkg = vcpkg_root / ("vcpkg.exe" if platform.system() == "Windows" else "vcpkg")
+        if not is_executable(vcpkg):
+            fallback = vcpkg_root / "vcpkg.exe"
+            if is_executable(fallback):
+                vcpkg = fallback
+
+    if not is_executable(vcpkg):
+        print(
+            f"Invalid --vcpkg-prefix ({prefix}): no executable vcpkg was found there.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    return validate_vcpkg(vcpkg, vcpkg_root, "--vcpkg-prefix")
 
 
 def bootstrap_local_vcpkg():
@@ -192,20 +239,22 @@ def bootstrap_local_vcpkg():
 
 
 def resolve_vcpkg(*, install_deps):
-    path_vcpkg = find_vcpkg_in_path()
-    if path_vcpkg:
-        return path_vcpkg
-
     if install_deps:
-        return bootstrap_local_vcpkg()
+        vcpkg, vcpkg_root = bootstrap_local_vcpkg()
+        return validate_vcpkg(vcpkg, vcpkg_root, "local vcpkg")
 
-    print(missing_tool_message("vcpkg", install_deps=install_deps), file=sys.stderr)
+    print(
+        "Missing required vcpkg. Provide --vcpkg-prefix /path/to/vcpkg "
+        "or rerun with --install-deps to bootstrap a local vcpkg.",
+        file=sys.stderr,
+    )
     sys.exit(1)
 
 
 def main():
     args = parse_args()
     vcpkg_triplet = os.environ.get("VCPKG_DEFAULT_TRIPLET", default_triplet())
+    selected_vcpkg = resolve_vcpkg_prefix(args.vcpkg_prefix) if args.vcpkg_prefix else None
 
     install_platform_dependencies(install_deps=args.install_deps)
     need_tool("git", install_deps=args.install_deps)
@@ -222,7 +271,10 @@ def main():
         install_deps=args.install_deps,
     )
 
-    vcpkg, vcpkg_root = resolve_vcpkg(install_deps=args.install_deps)
+    if selected_vcpkg:
+        vcpkg, vcpkg_root = selected_vcpkg
+    else:
+        vcpkg, vcpkg_root = resolve_vcpkg(install_deps=args.install_deps)
 
     log(f"Using vcpkg: {vcpkg}")
     log(f"Installing SDL3 packages for {vcpkg_triplet}")

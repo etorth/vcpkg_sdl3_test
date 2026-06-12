@@ -11,20 +11,26 @@ It exercises:
 - SDL3_ttf text rendering
 - SDL3_mixer WAV playback and looping OGG playback
 
-Build from a fresh checkout:
+Build with an existing vcpkg checkout:
 
 ```sh
-./build.py
+./build.py --vcpkg-prefix /path/to/vcpkg
 ```
 
-`build.py` uses the current working directory as the output root: it creates `build/` there, even when the script is launched by absolute path from another directory. By default it requires `git`, `curl`, `cmake`, a C/C++ compiler, and a valid `vcpkg` in `PATH`. Pass `--install-deps` to also install platform system dependencies where supported; if `vcpkg` is still missing from `PATH`, the script bootstraps a local `.vcpkg/` in the current directory. It installs SDL3 dependencies with static linkage where vcpkg supports it.
+Or bootstrap a local vcpkg checkout in the current directory:
+
+```sh
+./build.py --install-deps
+```
+
+`build.py` uses the current working directory as the output root: it creates `build/` there, even when the script is launched by absolute path from another directory. Use `--vcpkg-prefix` to point at an existing vcpkg installation. Without `--vcpkg-prefix`, vcpkg is controlled by `--install-deps`, which bootstraps a local `.vcpkg/` in the current directory. If `--install-deps` needs to install system-wide packages, it asks for confirmation before changing the system. It installs SDL3 dependencies with static linkage where vcpkg supports it.
 
 Out-of-source build example:
 
 ```sh
 mkdir -p ~/build/vcpkg_sdl3_test
 cd ~/build/vcpkg_sdl3_test
-/home/anhong/vcpkg_sdl3_test/build.py
+/home/anhong/vcpkg_sdl3_test/build.py --install-deps
 ```
 
 After vcpkg is ready, CMake can also configure and build directly by pointing at that vcpkg toolchain file:
