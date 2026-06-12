@@ -14,10 +14,10 @@ It exercises:
 Build from a fresh checkout:
 
 ```sh
-./build.sh
+./build.py
 ```
 
-`build.sh` installs a local vcpkg checkout in `.vcpkg`, installs SDL3 dependencies, and installs SDL3 Linux system prerequisites with `apt install` when needed. Set `SKIP_APT_INSTALL=1` to skip the apt step.
+`build.py` installs a local vcpkg checkout in `.vcpkg`, installs SDL3 dependencies, and installs SDL3 Linux system prerequisites with `apt install` when needed. Pass `--skip-apt-install` to skip the apt step. `build.sh` remains available as a shell equivalent.
 
 After vcpkg is ready, CMake can also configure and build directly:
 
