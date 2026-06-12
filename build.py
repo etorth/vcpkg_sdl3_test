@@ -12,7 +12,7 @@ SOURCE_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = Path.cwd().resolve()
 BUILD_DIR = Path(os.environ.get("BUILD_DIR", str(OUTPUT_DIR / "build"))).expanduser().resolve()
 BUILD_TYPE = os.environ.get("BUILD_TYPE", "Debug")
-VCPKG_ROOT = Path(os.environ.get("VCPKG_ROOT", str(OUTPUT_DIR / ".vcpkg"))).expanduser().resolve()
+LOCAL_VCPKG_ROOT = Path(os.environ.get("VCPKG_ROOT", str(OUTPUT_DIR / ".vcpkg"))).expanduser().resolve()
 
 REQUIRED_PACKAGES = [
     "git",
@@ -103,9 +103,21 @@ def install_platform_dependencies(*, install_deps):
         sys.exit(1)
 
 
-def need_tool(name):
+def missing_tool_message(description, *, install_deps):
+    if install_deps:
+        return f"Missing required tool after dependency installation: {description}. Install it manually."
+    return f"Missing required tool: {description}. Install it or rerun with --install-deps."
+
+
+def need_tool(name, *, install_deps):
     if not shutil.which(name):
-        print(f"Missing required tool: {name}", file=sys.stderr)
+        print(missing_tool_message(name, install_deps=install_deps), file=sys.stderr)
+        sys.exit(1)
+
+
+def need_any_tool(names, description, *, install_deps):
+    if not any(shutil.which(name) for name in names):
+        print(missing_tool_message(description, install_deps=install_deps), file=sys.stderr)
         sys.exit(1)
 
 
@@ -113,33 +125,81 @@ def is_executable(path):
     return path.is_file() and os.access(path, os.X_OK)
 
 
-def bootstrap_vcpkg():
-    if not VCPKG_ROOT.exists():
-        log(f"Installing vcpkg into {VCPKG_ROOT}")
-        run(["git", "clone", "https://github.com/microsoft/vcpkg.git", str(VCPKG_ROOT)])
+def vcpkg_toolchain(vcpkg_root):
+    return vcpkg_root / "scripts/buildsystems/vcpkg.cmake"
 
-    vcpkg = VCPKG_ROOT / ("vcpkg.exe" if platform.system() == "Windows" else "vcpkg")
+
+def find_vcpkg_in_path():
+    vcpkg_path = shutil.which("vcpkg") or shutil.which("vcpkg.exe")
+    if not vcpkg_path:
+        return None
+
+    vcpkg = Path(vcpkg_path).resolve()
+    try:
+        version_result = subprocess.run(
+            [str(vcpkg), "version"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except OSError as error:
+        print(f"Ignoring invalid vcpkg in PATH ({vcpkg}): {error}", file=sys.stderr)
+        return None
+
+    if version_result.returncode != 0:
+        print(f"Ignoring invalid vcpkg in PATH ({vcpkg}): `vcpkg version` failed", file=sys.stderr)
+        return None
+
+    vcpkg_root = vcpkg.parent
+    if vcpkg_toolchain(vcpkg_root).exists():
+        return vcpkg, vcpkg_root
+
+    print(
+        f"Ignoring invalid vcpkg in PATH ({vcpkg}): missing {vcpkg_toolchain(vcpkg_root)}",
+        file=sys.stderr,
+    )
+    return None
+
+
+def bootstrap_local_vcpkg():
+    if not LOCAL_VCPKG_ROOT.exists():
+        log(f"Installing vcpkg into {LOCAL_VCPKG_ROOT}")
+        run(["git", "clone", "https://github.com/microsoft/vcpkg.git", str(LOCAL_VCPKG_ROOT)])
+
+    vcpkg = LOCAL_VCPKG_ROOT / ("vcpkg.exe" if platform.system() == "Windows" else "vcpkg")
     if is_executable(vcpkg):
-        return vcpkg
+        return vcpkg, LOCAL_VCPKG_ROOT
 
-    bootstrap_sh = VCPKG_ROOT / "bootstrap-vcpkg.sh"
-    bootstrap_bat = VCPKG_ROOT / "bootstrap-vcpkg.bat"
+    bootstrap_sh = LOCAL_VCPKG_ROOT / "bootstrap-vcpkg.sh"
+    bootstrap_bat = LOCAL_VCPKG_ROOT / "bootstrap-vcpkg.bat"
     if bootstrap_sh.exists():
         run([str(bootstrap_sh), "-disableMetrics"])
     elif bootstrap_bat.exists():
         run(["cmd", "/c", str(bootstrap_bat), "-disableMetrics"])
     else:
-        print(f"vcpkg is not ready and no bootstrap script was found in {VCPKG_ROOT}", file=sys.stderr)
+        print(f"vcpkg is not ready and no bootstrap script was found in {LOCAL_VCPKG_ROOT}", file=sys.stderr)
         sys.exit(1)
 
     if is_executable(vcpkg):
-        return vcpkg
+        return vcpkg, LOCAL_VCPKG_ROOT
 
-    fallback = VCPKG_ROOT / "vcpkg.exe"
+    fallback = LOCAL_VCPKG_ROOT / "vcpkg.exe"
     if is_executable(fallback):
-        return fallback
+        return fallback, LOCAL_VCPKG_ROOT
 
-    print(f"vcpkg bootstrap finished, but no vcpkg executable was found in {VCPKG_ROOT}", file=sys.stderr)
+    print(f"vcpkg bootstrap finished, but no vcpkg executable was found in {LOCAL_VCPKG_ROOT}", file=sys.stderr)
+    sys.exit(1)
+
+
+def resolve_vcpkg(*, install_deps):
+    path_vcpkg = find_vcpkg_in_path()
+    if path_vcpkg:
+        return path_vcpkg
+
+    if install_deps:
+        return bootstrap_local_vcpkg()
+
+    print(missing_tool_message("vcpkg", install_deps=install_deps), file=sys.stderr)
     sys.exit(1)
 
 
@@ -148,12 +208,23 @@ def main():
     vcpkg_triplet = os.environ.get("VCPKG_DEFAULT_TRIPLET", default_triplet())
 
     install_platform_dependencies(install_deps=args.install_deps)
-    need_tool("git")
-    need_tool("curl")
-    need_tool("cmake")
+    need_tool("git", install_deps=args.install_deps)
+    need_tool("curl", install_deps=args.install_deps)
+    need_tool("cmake", install_deps=args.install_deps)
+    need_any_tool(
+        ["cc", "gcc", "clang", "cl"],
+        "C compiler (cc, gcc, clang, or cl)",
+        install_deps=args.install_deps,
+    )
+    need_any_tool(
+        ["c++", "g++", "clang++", "cl"],
+        "C++ compiler (c++, g++, clang++, or cl)",
+        install_deps=args.install_deps,
+    )
 
-    vcpkg = bootstrap_vcpkg()
+    vcpkg, vcpkg_root = resolve_vcpkg(install_deps=args.install_deps)
 
+    log(f"Using vcpkg: {vcpkg}")
     log(f"Installing SDL3 packages for {vcpkg_triplet}")
     run(
         [
@@ -178,7 +249,7 @@ def main():
             "-B",
             str(BUILD_DIR),
             f"-DCMAKE_BUILD_TYPE={BUILD_TYPE}",
-            f"-DCMAKE_TOOLCHAIN_FILE={VCPKG_ROOT / 'scripts/buildsystems/vcpkg.cmake'}",
+            f"-DCMAKE_TOOLCHAIN_FILE={vcpkg_toolchain(vcpkg_root)}",
             f"-DVCPKG_TARGET_TRIPLET={vcpkg_triplet}",
             "-DVCPKG_MANIFEST_MODE=OFF",
         ]

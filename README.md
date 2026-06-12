@@ -17,7 +17,7 @@ Build from a fresh checkout:
 ./build.py
 ```
 
-`build.py` uses the current working directory as the output root: it creates `.vcpkg/` and `build/` there, even when the script is launched by absolute path from another directory. It installs SDL3 dependencies with static linkage where vcpkg supports it. Pass `--install-deps` to also install platform system dependencies before building.
+`build.py` uses the current working directory as the output root: it creates `build/` there, even when the script is launched by absolute path from another directory. By default it requires `git`, `curl`, `cmake`, a C/C++ compiler, and a valid `vcpkg` in `PATH`. Pass `--install-deps` to also install platform system dependencies where supported; if `vcpkg` is still missing from `PATH`, the script bootstraps a local `.vcpkg/` in the current directory. It installs SDL3 dependencies with static linkage where vcpkg supports it.
 
 Out-of-source build example:
 
@@ -27,11 +27,11 @@ cd ~/build/vcpkg_sdl3_test
 /home/anhong/vcpkg_sdl3_test/build.py
 ```
 
-After vcpkg is ready, CMake can also configure and build directly:
+After vcpkg is ready, CMake can also configure and build directly by pointing at that vcpkg toolchain file:
 
 ```sh
 cmake -S /home/anhong/vcpkg_sdl3_test -B build \
-  -DCMAKE_TOOLCHAIN_FILE="$PWD/.vcpkg/scripts/buildsystems/vcpkg.cmake" \
+  -DCMAKE_TOOLCHAIN_FILE=/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake \
   -DVCPKG_MANIFEST_MODE=OFF
 cmake --build build --parallel
 ```
