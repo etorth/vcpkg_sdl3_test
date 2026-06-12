@@ -60,6 +60,14 @@ target_link_libraries(sdl3_vcpkg_test PRIVATE
   SDL3_gfx::SDL3_gfx
 )
 
+if(MINGW)
+  target_link_options(sdl3_vcpkg_test PRIVATE
+    -static
+    -static-libgcc
+    -static-libstdc++
+  )
+endif()
+
 add_custom_command(TARGET sdl3_vcpkg_test POST_BUILD
   COMMAND "${CMAKE_COMMAND}" -E copy_directory
           "${CMAKE_CURRENT_SOURCE_DIR}/res"
