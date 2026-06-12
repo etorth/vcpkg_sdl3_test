@@ -8,10 +8,11 @@ import sys
 from pathlib import Path
 
 
-ROOT_DIR = Path(__file__).resolve().parent
-BUILD_DIR = Path(os.environ.get("BUILD_DIR", str(ROOT_DIR / "build"))).expanduser()
+SOURCE_DIR = Path(__file__).resolve().parent
+OUTPUT_DIR = Path.cwd().resolve()
+BUILD_DIR = Path(os.environ.get("BUILD_DIR", str(OUTPUT_DIR / "build"))).expanduser().resolve()
 BUILD_TYPE = os.environ.get("BUILD_TYPE", "Debug")
-VCPKG_ROOT = Path(os.environ.get("VCPKG_ROOT", str(ROOT_DIR / ".vcpkg"))).expanduser()
+VCPKG_ROOT = Path(os.environ.get("VCPKG_ROOT", str(OUTPUT_DIR / ".vcpkg"))).expanduser().resolve()
 
 APT_PACKAGES = [
     "git",
@@ -162,7 +163,7 @@ def main():
             "--recurse",
             "--triplet",
             vcpkg_triplet,
-            f"--overlay-ports={ROOT_DIR / 'ports'}",
+            f"--overlay-ports={SOURCE_DIR / 'ports'}",
             *VCPKG_PACKAGES,
         ]
     )
@@ -173,7 +174,7 @@ def main():
         [
             "cmake",
             "-S",
-            str(ROOT_DIR),
+            str(SOURCE_DIR),
             "-B",
             str(BUILD_DIR),
             f"-DCMAKE_BUILD_TYPE={BUILD_TYPE}",
