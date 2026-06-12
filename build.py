@@ -14,7 +14,7 @@ BUILD_DIR = Path(os.environ.get("BUILD_DIR", str(OUTPUT_DIR / "build"))).expandu
 BUILD_TYPE = os.environ.get("BUILD_TYPE", "Debug")
 VCPKG_ROOT = Path(os.environ.get("VCPKG_ROOT", str(OUTPUT_DIR / ".vcpkg"))).expanduser().resolve()
 
-APT_PACKAGES = [
+REQUIRED_PACKAGES = [
     "git",
     "curl",
     "cmake",
@@ -61,22 +61,22 @@ def default_triplet():
 def parse_args():
     parser = argparse.ArgumentParser(description="Fresh-build the SDL3 vcpkg test project.")
     parser.add_argument(
-        "--skip-apt-install",
+        "--install-deps",
         action="store_true",
-        help="Skip installing Linux system packages with apt.",
+        help="Install platform system dependencies before building.",
     )
     return parser.parse_args()
 
 
-def install_apt_packages(packages, *, skip_apt_install):
-    if skip_apt_install:
+def install_platform_dependencies(*, install_deps):
+    if not install_deps:
         return
     if platform.system() != "Linux" or not shutil.which("apt") or not shutil.which("dpkg"):
         return
 
     missing = [
         package
-        for package in packages
+        for package in REQUIRED_PACKAGES
         if subprocess.run(
             ["dpkg", "-s", package],
             stdout=subprocess.DEVNULL,
@@ -99,7 +99,7 @@ def install_apt_packages(packages, *, skip_apt_install):
         run(["sudo", "env", "DEBIAN_FRONTEND=noninteractive", "apt", "install", "-y", *missing])
     else:
         print(f"Missing system packages: {' '.join(missing)}", file=sys.stderr)
-        print("Install them manually, or pass --skip-apt-install to skip this check.", file=sys.stderr)
+        print("Install them manually, or rerun with --install-deps.", file=sys.stderr)
         sys.exit(1)
 
 
@@ -147,7 +147,7 @@ def main():
     args = parse_args()
     vcpkg_triplet = os.environ.get("VCPKG_DEFAULT_TRIPLET", default_triplet())
 
-    install_apt_packages(APT_PACKAGES, skip_apt_install=args.skip_apt_install)
+    install_platform_dependencies(install_deps=args.install_deps)
     need_tool("git")
     need_tool("curl")
     need_tool("cmake")

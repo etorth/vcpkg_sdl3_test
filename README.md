@@ -17,7 +17,7 @@ Build from a fresh checkout:
 ./build.py
 ```
 
-`build.py` uses the current working directory as the output root: it creates `.vcpkg/` and `build/` there, even when the script is launched by absolute path from another directory. It installs SDL3 dependencies with static linkage where vcpkg supports it, and installs Linux system prerequisites with `apt install` when needed. Pass `--skip-apt-install` to skip the apt step.
+`build.py` uses the current working directory as the output root: it creates `.vcpkg/` and `build/` there, even when the script is launched by absolute path from another directory. It installs SDL3 dependencies with static linkage where vcpkg supports it. Pass `--install-deps` to also install platform system dependencies before building.
 
 Out-of-source build example:
 
