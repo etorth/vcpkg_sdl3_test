@@ -54,7 +54,7 @@ def default_triplet():
     if system == "Darwin":
         return "x64-osx"
     if system == "Windows" or system.startswith(("MINGW", "MSYS", "CYGWIN")):
-        return "x64-windows"
+        return "x64-windows-static"
     return "x64-linux"
 
 

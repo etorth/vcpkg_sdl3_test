@@ -33,7 +33,7 @@ find_library(SDL3_GFX_LIBRARY
 
 if(NOT SDL3_GFX_INCLUDE_DIR OR NOT SDL3_GFX_LIBRARY)
   message(FATAL_ERROR
-    "SDL3_gfx was not found. Run ./build.sh or install the sdl3-gfx overlay port from ./ports.")
+    "SDL3_gfx was not found. Run ./build.py or install the sdl3-gfx overlay port from ./ports.")
 endif()
 
 add_library(SDL3_gfx::SDL3_gfx UNKNOWN IMPORTED)
@@ -66,4 +66,3 @@ add_custom_command(TARGET sdl3_vcpkg_test POST_BUILD
           "$<TARGET_FILE_DIR:sdl3_vcpkg_test>/res"
   VERBATIM
 )
-

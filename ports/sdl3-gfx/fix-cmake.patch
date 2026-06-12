@@ -1,17 +1,95 @@
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -102,20 +102,22 @@
+@@ -11,6 +11,7 @@
+ # Options
+ ################################################################################
+ option(BUILD_TESTS "Build tests" Off)
++option(BUILD_SHARED_LIBS "Build shared library" Off)
+ 
+ ################################################################################
+ # Source groups
+@@ -46,26 +47,23 @@
+ ################################################################################
+ # Target
+ ################################################################################
+-# Build an static and a dynamic library.
+-if(NOT (CMAKE_SYSTEM_NAME STREQUAL "Emscripten"))
++# Build one library type matching BUILD_SHARED_LIBS.
++if(BUILD_SHARED_LIBS AND NOT (CMAKE_SYSTEM_NAME STREQUAL "Emscripten"))
+   add_library(${PROJECT_NAME}_Shared SHARED ${ALL_FILES})
+-endif()
+-add_library(${PROJECT_NAME}_Static STATIC ${ALL_FILES})
+-
+-# Set 3 properties on the static target
+-set_target_properties(
+-    ${PROJECT_NAME}_Static PROPERTIES
+-  OUTPUT_NAME ${PROJECT_NAME}
+-  ARCHIVE_OUTPUT_DIRECTORY ${PROJECT_NAME}_Static
+-  PUBLIC_HEADER "${Headers}"
+-)
+-if(NOT(CMAKE_SYSTEM_NAME STREQUAL "Emscripten"))
+   set_target_properties(
+       ${PROJECT_NAME}_Shared PROPERTIES
+     VERSION "${CMAKE_PROJECT_VERSION}" SOVERSION "${SO_VERSION_MAJOR}"
+     OUTPUT_NAME ${PROJECT_NAME}
+     LIBRARY_OUTPUT_DIRECTORY ${PROJECT_NAME}_Shared
+   )
++else()
++  add_library(${PROJECT_NAME}_Static STATIC ${ALL_FILES})
++  set_target_properties(
++      ${PROJECT_NAME}_Static PROPERTIES
++    OUTPUT_NAME ${PROJECT_NAME}
++    ARCHIVE_OUTPUT_DIRECTORY ${PROJECT_NAME}_Static
++    PUBLIC_HEADER "${Headers}"
++  )
+ endif()
+ 
+ ################################################################################
+@@ -73,7 +71,7 @@
+ ################################################################################
+ # Specify include directories to use when compiling SDL3_gfx
+ # Include SDL3 include folder
+-if(NOT (CMAKE_SYSTEM_NAME STREQUAL "Emscripten"))
++if(TARGET ${PROJECT_NAME}_Shared)
+   target_include_directories(${PROJECT_NAME}_Shared PUBLIC
+     "${CMAKE_CURRENT_SOURCE_DIR}/../SDL/include"
+     ${CMAKE_CURRENT_SOURCE_DIR}
+@@ -82,11 +80,13 @@
+ endif()
+ 
+ # Add the include directories of standard SDL3 for static library.
+-target_include_directories(${PROJECT_NAME}_Static PUBLIC
+-    "${CMAKE_CURRENT_SOURCE_DIR}/../SDL/include"
+-    ${CMAKE_CURRENT_SOURCE_DIR}
+-    ${SDL3_INCLUDE_DIR}
+-)
++if(TARGET ${PROJECT_NAME}_Static)
++  target_include_directories(${PROJECT_NAME}_Static PUBLIC
++      "${CMAKE_CURRENT_SOURCE_DIR}/../SDL/include"
++      ${CMAKE_CURRENT_SOURCE_DIR}
++      ${SDL3_INCLUDE_DIR}
++  )
++endif()
+ 
+ ################################################################################
+ # Dependencies
+@@ -100,25 +100,29 @@
+ endif()
+ 
  # Specify libraries directories that we will link with SDL3_gfx.
- # Static libraries don't need linking.
- if(NOT(CMAKE_SYSTEM_NAME STREQUAL "Emscripten"))
+-# Static libraries don't need linking.
+-if(NOT(CMAKE_SYSTEM_NAME STREQUAL "Emscripten"))
 -  target_link_libraries(${PROJECT_NAME}_Shared PRIVATE SDL3::SDL3)
++if(TARGET ${PROJECT_NAME}_Shared)
 +  target_link_libraries(${PROJECT_NAME}_Shared PUBLIC SDL3::SDL3)
++endif()
++if(TARGET ${PROJECT_NAME}_Static)
++  target_link_libraries(${PROJECT_NAME}_Static PUBLIC SDL3::SDL3)
  endif()
  
  # copy to default locations
-+target_link_libraries(${PROJECT_NAME}_Static PUBLIC SDL3::SDL3)
-+
- if(NOT(CMAKE_SYSTEM_NAME STREQUAL "Emscripten"))
+-if(NOT(CMAKE_SYSTEM_NAME STREQUAL "Emscripten"))
++if(TARGET ${PROJECT_NAME}_Shared)
    install (TARGETS ${PROJECT_NAME}_Shared
      LIBRARY DESTINATION lib
      RUNTIME DESTINATION bin
@@ -19,10 +97,20 @@
 +    ARCHIVE DESTINATION lib)
  endif()
  # Install headers following the convension of SDL3.
- install (TARGETS ${PROJECT_NAME}_Static
-   LIBRARY DESTINATION lib
-   RUNTIME DESTINATION bin
+-install (TARGETS ${PROJECT_NAME}_Static
+-  LIBRARY DESTINATION lib
+-  RUNTIME DESTINATION bin
 -  ARCHIVE DESTINATION lib/${PROJECT_NAME}
-+  ARCHIVE DESTINATION lib
-   PUBLIC_HEADER DESTINATION include/SDL3_gfx
- )
+-  PUBLIC_HEADER DESTINATION include/SDL3_gfx
+-)
++if(TARGET ${PROJECT_NAME}_Static)
++  install (TARGETS ${PROJECT_NAME}_Static
++    LIBRARY DESTINATION lib
++    RUNTIME DESTINATION bin
++    ARCHIVE DESTINATION lib
++    PUBLIC_HEADER DESTINATION include/SDL3_gfx
++  )
++endif()
+ 
+ ################################################################################
+ # pkg-config

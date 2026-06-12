@@ -8,10 +8,13 @@ vcpkg_from_github(
         fix-cmake.patch
 )
 
+string(COMPARE EQUAL "${VCPKG_LIBRARY_LINKAGE}" "dynamic" SDL3_GFX_BUILD_SHARED)
+
 vcpkg_cmake_configure(
     SOURCE_PATH "${SOURCE_PATH}"
     OPTIONS
         -DBUILD_TESTS=OFF
+        -DBUILD_SHARED_LIBS=${SDL3_GFX_BUILD_SHARED}
 )
 vcpkg_cmake_install()
 vcpkg_copy_pdbs()
@@ -21,4 +24,3 @@ file(REMOVE_RECURSE "${CURRENT_PACKAGES_DIR}/debug/include")
 file(INSTALL "${SOURCE_PATH}/COPYING"
      DESTINATION "${CURRENT_PACKAGES_DIR}/share/${PORT}"
      RENAME copyright)
-
