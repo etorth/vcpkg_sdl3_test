@@ -23,7 +23,7 @@ Or bootstrap a local vcpkg checkout in the current directory:
 ./build.py --install-deps
 ```
 
-`build.py` uses the current working directory as the output root: it creates `build/` there, even when the script is launched by absolute path from another directory. Use `--vcpkg-prefix` to point at an existing vcpkg installation. Without `--vcpkg-prefix`, vcpkg is controlled by `--install-deps`, which bootstraps a local `.vcpkg/` in the current directory. If `--install-deps` needs to install system-wide packages, it asks for confirmation before changing the system. It installs SDL3 dependencies with static linkage where vcpkg supports it. MSYS2/MinGW shells default to a `*-mingw-static` triplet; other Windows shells default to `x64-windows-static`. Set `VCPKG_DEFAULT_TRIPLET` to override the default.
+`build.py` uses the current working directory as the output root: it creates `build/` there, even when the script is launched by absolute path from another directory. Use `--vcpkg-prefix` to point at an existing vcpkg installation. Without `--vcpkg-prefix`, vcpkg is controlled by `--install-deps`, which bootstraps a local `.vcpkg/` in the current directory. If `--install-deps` needs to install system-wide packages, it asks for confirmation before changing the system. It installs SDL3 dependencies with static linkage where vcpkg supports it. MSYS2/MinGW shells default both target and host packages to a `*-mingw-static` triplet; other Windows shells default target packages to `x64-windows-static`. Set `VCPKG_DEFAULT_TRIPLET` or `VCPKG_DEFAULT_HOST_TRIPLET` to override those defaults.
 
 Out-of-source build example:
 

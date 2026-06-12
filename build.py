@@ -97,6 +97,15 @@ def default_triplet():
     return "x64-linux"
 
 
+def default_host_triplet(target_triplet):
+    mingw_triplet = default_mingw_triplet()
+    if mingw_triplet:
+        return mingw_triplet
+    if "mingw" in target_triplet:
+        return target_triplet
+    return None
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Fresh-build the SDL3 vcpkg test project.")
     parser.add_argument(
@@ -295,6 +304,10 @@ def resolve_vcpkg(*, install_deps):
 def main():
     args = parse_args()
     vcpkg_triplet = os.environ.get("VCPKG_DEFAULT_TRIPLET", default_triplet())
+    vcpkg_host_triplet = os.environ.get(
+        "VCPKG_DEFAULT_HOST_TRIPLET",
+        default_host_triplet(vcpkg_triplet),
+    )
     selected_vcpkg = resolve_vcpkg_prefix(args.vcpkg_prefix) if args.vcpkg_prefix else None
 
     install_platform_dependencies(install_deps=args.install_deps)
@@ -318,35 +331,41 @@ def main():
         vcpkg, vcpkg_root = resolve_vcpkg(install_deps=args.install_deps)
 
     log(f"Using vcpkg: {vcpkg}")
-    log(f"Installing SDL3 packages for {vcpkg_triplet}")
-    run(
-        [
-            str(vcpkg),
-            "install",
-            "--classic",
-            "--recurse",
-            "--triplet",
-            vcpkg_triplet,
-            f"--overlay-ports={SOURCE_DIR / 'ports'}",
-            *VCPKG_PACKAGES,
-        ]
-    )
+    if vcpkg_host_triplet:
+        log(f"Installing SDL3 packages for {vcpkg_triplet} with host triplet {vcpkg_host_triplet}")
+    else:
+        log(f"Installing SDL3 packages for {vcpkg_triplet}")
+
+    vcpkg_install_args = [
+        str(vcpkg),
+        "install",
+        "--classic",
+        "--recurse",
+        "--triplet",
+        vcpkg_triplet,
+        f"--overlay-ports={SOURCE_DIR / 'ports'}",
+    ]
+    if vcpkg_host_triplet:
+        vcpkg_install_args.extend(["--host-triplet", vcpkg_host_triplet])
+    vcpkg_install_args.extend(VCPKG_PACKAGES)
+    run(vcpkg_install_args)
 
     log(f"Configuring a fresh build in {BUILD_DIR}")
     shutil.rmtree(BUILD_DIR, ignore_errors=True)
-    run(
-        [
-            "cmake",
-            "-S",
-            str(SOURCE_DIR),
-            "-B",
-            str(BUILD_DIR),
-            f"-DCMAKE_BUILD_TYPE={BUILD_TYPE}",
-            f"-DCMAKE_TOOLCHAIN_FILE={vcpkg_toolchain(vcpkg_root)}",
-            f"-DVCPKG_TARGET_TRIPLET={vcpkg_triplet}",
-            "-DVCPKG_MANIFEST_MODE=OFF",
-        ]
-    )
+    cmake_configure_args = [
+        "cmake",
+        "-S",
+        str(SOURCE_DIR),
+        "-B",
+        str(BUILD_DIR),
+        f"-DCMAKE_BUILD_TYPE={BUILD_TYPE}",
+        f"-DCMAKE_TOOLCHAIN_FILE={vcpkg_toolchain(vcpkg_root)}",
+        f"-DVCPKG_TARGET_TRIPLET={vcpkg_triplet}",
+        "-DVCPKG_MANIFEST_MODE=OFF",
+    ]
+    if vcpkg_host_triplet:
+        cmake_configure_args.append(f"-DVCPKG_HOST_TRIPLET={vcpkg_host_triplet}")
+    run(cmake_configure_args)
 
     log("Building")
     run(["cmake", "--build", str(BUILD_DIR), "--config", BUILD_TYPE, "--parallel"])
