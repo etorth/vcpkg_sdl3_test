@@ -45,15 +45,54 @@ def run(args, *, env=None):
     subprocess.run(args, check=True, env=env)
 
 
+def run_batch_file(batch_file, *args):
+    run([os.environ.get("COMSPEC") or "cmd", "/c", str(batch_file), *args])
+
+
 def log(message):
     print(message, flush=True)
+
+
+def is_windows_like(system=None):
+    system = system or platform.system()
+    return system == "Windows" or system.startswith(("MINGW", "MSYS", "CYGWIN"))
+
+
+def default_mingw_triplet():
+    msystem = os.environ.get("MSYSTEM", "").upper()
+    msystem_chost = os.environ.get("MSYSTEM_CHOST", "").lower()
+    has_msys2_environment = bool(
+        msystem
+        or msystem_chost
+        or os.environ.get("MINGW_PREFIX")
+        or os.environ.get("MSYSTEM_PREFIX")
+    )
+
+    if not has_msys2_environment and not platform.system().startswith(("MINGW", "MSYS")):
+        return None
+
+    if "aarch64" in msystem_chost or "arm64" in msystem:
+        return "arm64-mingw-static"
+    if msystem_chost.startswith("i686") or msystem.endswith("32"):
+        return "x86-mingw-static"
+
+    machine = platform.machine().lower()
+    if machine in ("aarch64", "arm64"):
+        return "arm64-mingw-static"
+    if machine in ("i386", "i686", "x86"):
+        return "x86-mingw-static"
+
+    return "x64-mingw-static"
 
 
 def default_triplet():
     system = platform.system()
     if system == "Darwin":
         return "x64-osx"
-    if system == "Windows" or system.startswith(("MINGW", "MSYS", "CYGWIN")):
+    mingw_triplet = default_mingw_triplet()
+    if mingw_triplet:
+        return mingw_triplet
+    if is_windows_like(system):
         return "x64-windows-static"
     return "x64-linux"
 
@@ -192,7 +231,7 @@ def resolve_vcpkg_prefix(vcpkg_prefix):
         vcpkg_root = prefix.parent
     else:
         vcpkg_root = prefix
-        vcpkg = vcpkg_root / ("vcpkg.exe" if platform.system() == "Windows" else "vcpkg")
+        vcpkg = vcpkg_root / ("vcpkg.exe" if is_windows_like() else "vcpkg")
         if not is_executable(vcpkg):
             fallback = vcpkg_root / "vcpkg.exe"
             if is_executable(fallback):
@@ -213,16 +252,18 @@ def bootstrap_local_vcpkg():
         log(f"Installing vcpkg into {LOCAL_VCPKG_ROOT}")
         run(["git", "clone", "https://github.com/microsoft/vcpkg.git", str(LOCAL_VCPKG_ROOT)])
 
-    vcpkg = LOCAL_VCPKG_ROOT / ("vcpkg.exe" if platform.system() == "Windows" else "vcpkg")
+    vcpkg = LOCAL_VCPKG_ROOT / ("vcpkg.exe" if is_windows_like() else "vcpkg")
     if is_executable(vcpkg):
         return vcpkg, LOCAL_VCPKG_ROOT
 
     bootstrap_sh = LOCAL_VCPKG_ROOT / "bootstrap-vcpkg.sh"
     bootstrap_bat = LOCAL_VCPKG_ROOT / "bootstrap-vcpkg.bat"
-    if bootstrap_sh.exists():
+    if is_windows_like() and bootstrap_bat.exists():
+        run_batch_file(bootstrap_bat, "-disableMetrics")
+    elif bootstrap_sh.exists():
         run([str(bootstrap_sh), "-disableMetrics"])
     elif bootstrap_bat.exists():
-        run(["cmd", "/c", str(bootstrap_bat), "-disableMetrics"])
+        run_batch_file(bootstrap_bat, "-disableMetrics")
     else:
         print(f"vcpkg is not ready and no bootstrap script was found in {LOCAL_VCPKG_ROOT}", file=sys.stderr)
         sys.exit(1)
