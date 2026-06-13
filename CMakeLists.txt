@@ -66,6 +66,13 @@ if(MINGW)
     -static-libgcc
     -static-libstdc++
   )
+elseif(CMAKE_SYSTEM_NAME MATCHES "Linux")
+  # Avoid global '-static' on Linux to prevent glibc breakage,
+  # but keep the C/C++ runtimes static for portability.
+  target_link_options(sdl3_vcpkg_test PRIVATE
+    -static-libgcc
+    -static-libstdc++
+  )
 endif()
 
 add_custom_command(TARGET sdl3_vcpkg_test POST_BUILD
