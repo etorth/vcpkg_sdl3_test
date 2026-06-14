@@ -136,16 +136,7 @@ def resolve_vcpkg_prefix(vcpkg_prefix):
 def bootstrap_local_vcpkg(local_vcpkg_dir):
     if not local_vcpkg_dir.exists():
         log(f"Installing vcpkg into {local_vcpkg_dir}")
-        run(
-            [
-                "git",
-                "clone",
-                "--depth",
-                "1",
-                "https://github.com/microsoft/vcpkg.git",
-                str(local_vcpkg_dir),
-            ]
-        )
+        run(["git", "clone", "--depth", "1", "https://github.com/microsoft/vcpkg.git", str(local_vcpkg_dir)])
 
     vcpkg = local_vcpkg_dir / ("vcpkg.exe" if is_windows_like() else "vcpkg")
     if is_executable(vcpkg):
@@ -181,10 +172,7 @@ def resolve_vcpkg(local_vcpkg_dir):
 def main():
     args = parse_args()
     vcpkg_triplet = os.environ.get("VCPKG_DEFAULT_TRIPLET", default_triplet())
-    vcpkg_host_triplet = os.environ.get(
-        "VCPKG_DEFAULT_HOST_TRIPLET",
-        default_host_triplet(vcpkg_triplet),
-    )
+    vcpkg_host_triplet = os.environ.get("VCPKG_DEFAULT_HOST_TRIPLET", default_host_triplet(vcpkg_triplet))
     local_build_dir = args.build_dir.expanduser().resolve() if args.build_dir else DEFAULT_LOCAL_BUILD_DIR
     local_vcpkg_dir = local_build_dir / "vcpkg"
     cmake_build_dir = local_build_dir / "build"
@@ -230,10 +218,10 @@ def main():
 
     log("Building")
     run(["cmake", "--build", str(cmake_build_dir), "--config", args.build_type, "--parallel"])
-    log(f"Built: {cmake_build_dir / 'bin/sdl3_vcpkg_test'}")
 
     log(f"Installing into {install_prefix}")
     run(["cmake", "--install", str(cmake_build_dir), "--config", args.build_type])
+    log(f"Installed: {install_prefix / 'sdl3_vcpkg_test'}")
 
 
 if __name__ == "__main__":

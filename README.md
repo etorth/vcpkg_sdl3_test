@@ -46,7 +46,7 @@ cmake --build build --parallel
 Run the demo from the install output:
 
 ```sh
-./install/bin/sdl3_vcpkg_test
+./install/sdl3_vcpkg_test
 ```
 
 Press Space to replay the sound and Esc to quit.

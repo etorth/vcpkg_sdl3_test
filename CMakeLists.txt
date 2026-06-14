@@ -48,10 +48,6 @@ add_executable(sdl3_vcpkg_test
   src/main.cpp
 )
 
-set_target_properties(sdl3_vcpkg_test PROPERTIES
-  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
-)
-
 target_link_libraries(sdl3_vcpkg_test PRIVATE
   SDL3::SDL3
   $<IF:$<TARGET_EXISTS:SDL3_image::SDL3_image-shared>,SDL3_image::SDL3_image-shared,SDL3_image::SDL3_image-static>
@@ -81,3 +77,6 @@ add_custom_command(TARGET sdl3_vcpkg_test POST_BUILD
           "$<TARGET_FILE_DIR:sdl3_vcpkg_test>/res"
   VERBATIM
 )
+
+install(TARGETS sdl3_vcpkg_test RUNTIME DESTINATION .)
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/res" DESTINATION .)
