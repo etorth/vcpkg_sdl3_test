@@ -14,24 +14,6 @@ BUILD_DIR = Path(os.environ.get("BUILD_DIR", str(OUTPUT_DIR / "build"))).expandu
 BUILD_TYPE = os.environ.get("BUILD_TYPE", "Debug")
 LOCAL_VCPKG_ROOT = Path(os.environ.get("VCPKG_ROOT", str(OUTPUT_DIR / ".vcpkg"))).expanduser().resolve()
 
-REQUIRED_PACKAGES = [
-    "git",
-    "curl",
-    "cmake",
-    "build-essential",
-    "pkg-config",
-    "tar",
-    "zip",
-    "unzip",
-    "libx11-dev",
-    "libxft-dev",
-    "libxext-dev",
-    "libwayland-dev",
-    "libxkbcommon-dev",
-    "libegl1-mesa-dev",
-    "libibus-1.0-dev",
-]
-
 def run(args, *, env=None):
     subprocess.run(args, check=True, env=env)
 
@@ -100,11 +82,6 @@ def default_host_triplet(target_triplet):
 def parse_args():
     parser = argparse.ArgumentParser(description="Fresh-build the SDL3 vcpkg test project.")
     parser.add_argument(
-        "--install-deps",
-        action="store_true",
-        help="Install platform system dependencies before building.",
-    )
-    parser.add_argument(
         "--vcpkg-prefix",
         type=Path,
         help="Use the vcpkg installation at this prefix instead of bootstrapping a local one.",
@@ -120,127 +97,12 @@ def parse_args():
     return parser.parse_args()
 
 
-def confirm_system_package_install(packages):
-    package_list = " ".join(packages)
-    try:
-        answer = input(f"Install system packages system-wide: {package_list}. Confirm [y/N]: ")
-    except EOFError:
-        answer = ""
-
-    if answer.strip().lower() not in ("y", "yes"):
-        print("Aborted system package installation.", file=sys.stderr)
-        sys.exit(1)
-
-
-def install_platform_dependencies(*, install_deps):
-    if not install_deps:
-        return
-    if platform.system() != "Linux" or not shutil.which("apt") or not shutil.which("dpkg"):
-        return
-
-    missing = [
-        package
-        for package in REQUIRED_PACKAGES
-        if subprocess.run(
-            ["dpkg", "-s", package],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        ).returncode
-        != 0
-    ]
-    if not missing:
-        return
-
-    if getattr(os, "geteuid", lambda: -1)() == 0:
-        confirm_system_package_install(missing)
-        log(f"Installing system packages required by vcpkg/SDL3: {' '.join(missing)}")
-        run(["apt", "update"])
-        env = os.environ.copy()
-        env["DEBIAN_FRONTEND"] = "noninteractive"
-        run(["apt", "install", "-y", *missing], env=env)
-    elif shutil.which("sudo"):
-        confirm_system_package_install(missing)
-        log(f"Installing system packages required by vcpkg/SDL3: {' '.join(missing)}")
-        run(["sudo", "apt", "update"])
-        run(
-            [
-                "sudo",
-                "env",
-                "DEBIAN_FRONTEND=noninteractive",
-                "apt",
-                "install",
-                "-y",
-                *missing,
-            ]
-        )
-    else:
-        print(f"Missing system packages: {' '.join(missing)}", file=sys.stderr)
-        print("Install them manually.", file=sys.stderr)
-        sys.exit(1)
-
-
-def missing_tool_message(description, *, install_deps):
-    if install_deps:
-        return (
-            f"Missing required tool after dependency installation: {description}. "
-            "Install it manually."
-        )
-    return f"Missing required tool: {description}. Install it or rerun with --install-deps."
-
-
-def need_tool(name, *, install_deps):
-    if not shutil.which(name):
-        print(missing_tool_message(name, install_deps=install_deps), file=sys.stderr)
-        sys.exit(1)
-
-
-def need_any_tool(names, description, *, install_deps):
-    if not any(shutil.which(name) for name in names):
-        print(missing_tool_message(description, install_deps=install_deps), file=sys.stderr)
-        sys.exit(1)
-
-
-def resolve_requested_tool(name, description, *, install_deps):
-    tool_path = shutil.which(name)
-    if not tool_path:
-        print(
-            missing_tool_message(f"{description} ({name})", install_deps=install_deps),
-            file=sys.stderr,
-        )
-        sys.exit(1)
-    return tool_path
-
-
 def is_executable(path):
     return path.is_file() and os.access(path, os.X_OK)
 
 
 def vcpkg_toolchain(vcpkg_root):
     return vcpkg_root / "scripts/buildsystems/vcpkg.cmake"
-
-
-def validate_vcpkg(vcpkg, vcpkg_root, source):
-    try:
-        version_result = subprocess.run(
-            [str(vcpkg), "version"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-    except OSError as error:
-        print(f"Invalid {source} ({vcpkg}): {error}", file=sys.stderr)
-        sys.exit(1)
-
-    if version_result.returncode != 0:
-        print(f"Invalid {source} ({vcpkg}): `vcpkg version` failed", file=sys.stderr)
-        sys.exit(1)
-
-    if vcpkg_toolchain(vcpkg_root).exists():
-        return vcpkg, vcpkg_root
-
-    print(f"Invalid {source} ({vcpkg_root}): missing {vcpkg_toolchain(vcpkg_root)}", file=sys.stderr)
-    sys.exit(1)
 
 
 def resolve_vcpkg_prefix(vcpkg_prefix):
@@ -256,14 +118,7 @@ def resolve_vcpkg_prefix(vcpkg_prefix):
             if is_executable(fallback):
                 vcpkg = fallback
 
-    if not is_executable(vcpkg):
-        print(
-            f"Invalid --vcpkg-prefix ({prefix}): no executable vcpkg was found there.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    return validate_vcpkg(vcpkg, vcpkg_root, "--vcpkg-prefix")
+    return vcpkg, vcpkg_root
 
 
 def bootstrap_local_vcpkg():
@@ -298,17 +153,8 @@ def bootstrap_local_vcpkg():
     sys.exit(1)
 
 
-def resolve_vcpkg(*, install_deps):
-    if install_deps:
-        vcpkg, vcpkg_root = bootstrap_local_vcpkg()
-        return validate_vcpkg(vcpkg, vcpkg_root, "local vcpkg")
-
-    print(
-        "Missing required vcpkg. Provide --vcpkg-prefix /path/to/vcpkg "
-        "or rerun with --install-deps to bootstrap a local vcpkg.",
-        file=sys.stderr,
-    )
-    sys.exit(1)
+def resolve_vcpkg():
+    return bootstrap_local_vcpkg()
 
 
 def main():
@@ -320,43 +166,10 @@ def main():
     )
     selected_vcpkg = resolve_vcpkg_prefix(args.vcpkg_prefix) if args.vcpkg_prefix else None
 
-    # install_platform_dependencies(install_deps=args.install_deps)
-    need_tool("git", install_deps=args.install_deps)
-    need_tool("zip", install_deps=args.install_deps)
-    need_tool("curl", install_deps=args.install_deps)
-    need_tool("cmake", install_deps=args.install_deps)
-    c_compiler = None
-    cxx_compiler = None
-    if args.c_compiler:
-        c_compiler = resolve_requested_tool(
-            args.c_compiler,
-            "C compiler",
-            install_deps=args.install_deps,
-        )
-    else:
-        need_any_tool(
-            ["cc", "gcc", "clang", "cl"],
-            "C compiler (cc, gcc, clang, or cl)",
-            install_deps=args.install_deps,
-        )
-
-    if args.cxx_compiler:
-        cxx_compiler = resolve_requested_tool(
-            args.cxx_compiler,
-            "C++ compiler",
-            install_deps=args.install_deps,
-        )
-    else:
-        need_any_tool(
-            ["c++", "g++", "clang++", "cl"],
-            "C++ compiler (c++, g++, clang++, or cl)",
-            install_deps=args.install_deps,
-        )
-
     if selected_vcpkg:
         vcpkg, vcpkg_root = selected_vcpkg
     else:
-        vcpkg, vcpkg_root = resolve_vcpkg(install_deps=args.install_deps)
+        vcpkg, vcpkg_root = resolve_vcpkg()
 
     log(f"Using vcpkg: {vcpkg}")
     if vcpkg_host_triplet:
@@ -378,10 +191,10 @@ def main():
     ]
     if vcpkg_host_triplet:
         cmake_configure_args.append(f"-DVCPKG_HOST_TRIPLET={vcpkg_host_triplet}")
-    if c_compiler:
-        cmake_configure_args.append(f"-DCMAKE_C_COMPILER={c_compiler}")
-    if cxx_compiler:
-        cmake_configure_args.append(f"-DCMAKE_CXX_COMPILER={cxx_compiler}")
+    if args.c_compiler:
+        cmake_configure_args.append(f"-DCMAKE_C_COMPILER={args.c_compiler}")
+    if args.cxx_compiler:
+        cmake_configure_args.append(f"-DCMAKE_CXX_COMPILER={args.cxx_compiler}")
     run(cmake_configure_args)
 
     log("Building")
