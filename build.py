@@ -32,15 +32,6 @@ REQUIRED_PACKAGES = [
     "libibus-1.0-dev",
 ]
 
-VCPKG_PACKAGES = [
-    "sdl3",
-    "sdl3-image[png]",
-    "sdl3-ttf",
-    "sdl3-mixer[libvorbis]",
-    "sdl3-gfx",
-]
-
-
 def run(args, *, env=None):
     subprocess.run(args, check=True, env=env)
 
@@ -332,23 +323,9 @@ def main():
 
     log(f"Using vcpkg: {vcpkg}")
     if vcpkg_host_triplet:
-        log(f"Installing SDL3 packages for {vcpkg_triplet} with host triplet {vcpkg_host_triplet}")
+        log(f"Configuring SDL3 manifest for {vcpkg_triplet} with host triplet {vcpkg_host_triplet}")
     else:
-        log(f"Installing SDL3 packages for {vcpkg_triplet}")
-
-    vcpkg_install_args = [
-        str(vcpkg),
-        "install",
-        "--classic",
-        "--recurse",
-        "--triplet",
-        vcpkg_triplet,
-        f"--overlay-ports={SOURCE_DIR / 'ports'}",
-    ]
-    if vcpkg_host_triplet:
-        vcpkg_install_args.extend(["--host-triplet", vcpkg_host_triplet])
-    vcpkg_install_args.extend(VCPKG_PACKAGES)
-    run(vcpkg_install_args)
+        log(f"Configuring SDL3 manifest for {vcpkg_triplet}")
 
     log(f"Configuring a fresh build in {BUILD_DIR}")
     shutil.rmtree(BUILD_DIR, ignore_errors=True)
@@ -361,7 +338,6 @@ def main():
         f"-DCMAKE_BUILD_TYPE={BUILD_TYPE}",
         f"-DCMAKE_TOOLCHAIN_FILE={vcpkg_toolchain(vcpkg_root)}",
         f"-DVCPKG_TARGET_TRIPLET={vcpkg_triplet}",
-        "-DVCPKG_MANIFEST_MODE=OFF",
     ]
     if vcpkg_host_triplet:
         cmake_configure_args.append(f"-DVCPKG_HOST_TRIPLET={vcpkg_host_triplet}")
