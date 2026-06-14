@@ -109,6 +109,14 @@ def parse_args():
         type=Path,
         help="Use the vcpkg installation at this prefix instead of bootstrapping a local one.",
     )
+    parser.add_argument(
+        "--c-compiler",
+        help="Use this C compiler from PATH instead of auto-detecting one.",
+    )
+    parser.add_argument(
+        "--cxx-compiler",
+        help="Use this C++ compiler from PATH instead of auto-detecting one.",
+    )
     return parser.parse_args()
 
 
@@ -191,6 +199,17 @@ def need_any_tool(names, description, *, install_deps):
     if not any(shutil.which(name) for name in names):
         print(missing_tool_message(description, install_deps=install_deps), file=sys.stderr)
         sys.exit(1)
+
+
+def resolve_requested_tool(name, description, *, install_deps):
+    tool_path = shutil.which(name)
+    if not tool_path:
+        print(
+            missing_tool_message(f"{description} ({name})", install_deps=install_deps),
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return tool_path
 
 
 def is_executable(path):
@@ -306,8 +325,33 @@ def main():
     need_tool("zip", install_deps=args.install_deps)
     need_tool("curl", install_deps=args.install_deps)
     need_tool("cmake", install_deps=args.install_deps)
-    need_any_tool(["cc", "gcc", "clang", "cl"], "C compiler (cc, gcc, clang, or cl)", install_deps=args.install_deps)
-    need_any_tool(["c++", "g++", "clang++", "cl"], "C++ compiler (c++, g++, clang++, or cl)", install_deps=args.install_deps)
+    c_compiler = None
+    cxx_compiler = None
+    if args.c_compiler:
+        c_compiler = resolve_requested_tool(
+            args.c_compiler,
+            "C compiler",
+            install_deps=args.install_deps,
+        )
+    else:
+        need_any_tool(
+            ["cc", "gcc", "clang", "cl"],
+            "C compiler (cc, gcc, clang, or cl)",
+            install_deps=args.install_deps,
+        )
+
+    if args.cxx_compiler:
+        cxx_compiler = resolve_requested_tool(
+            args.cxx_compiler,
+            "C++ compiler",
+            install_deps=args.install_deps,
+        )
+    else:
+        need_any_tool(
+            ["c++", "g++", "clang++", "cl"],
+            "C++ compiler (c++, g++, clang++, or cl)",
+            install_deps=args.install_deps,
+        )
 
     if selected_vcpkg:
         vcpkg, vcpkg_root = selected_vcpkg
@@ -334,6 +378,10 @@ def main():
     ]
     if vcpkg_host_triplet:
         cmake_configure_args.append(f"-DVCPKG_HOST_TRIPLET={vcpkg_host_triplet}")
+    if c_compiler:
+        cmake_configure_args.append(f"-DCMAKE_C_COMPILER={c_compiler}")
+    if cxx_compiler:
+        cmake_configure_args.append(f"-DCMAKE_CXX_COMPILER={cxx_compiler}")
     run(cmake_configure_args)
 
     log("Building")
