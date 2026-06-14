@@ -232,6 +232,9 @@ def main():
     run(["cmake", "--build", str(cmake_build_dir), "--config", args.build_type, "--parallel"])
     log(f"Built: {cmake_build_dir / 'bin/sdl3_vcpkg_test'}")
 
+    log(f"Installing into {install_prefix}")
+    run(["cmake", "--install", str(cmake_build_dir), "--config", args.build_type])
+
 
 if __name__ == "__main__":
     main()

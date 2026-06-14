@@ -43,10 +43,10 @@ cmake -S /home/anhong/vcpkg_sdl3_test -B build \
 cmake --build build --parallel
 ```
 
-Run the demo from the build output:
+Run the demo from the install output:
 
 ```sh
-./build/bin/sdl3_vcpkg_test
+./install/bin/sdl3_vcpkg_test
 ```
 
 Press Space to replay the sound and Esc to quit.
