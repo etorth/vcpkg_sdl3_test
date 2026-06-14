@@ -9,10 +9,7 @@ from pathlib import Path
 
 
 SOURCE_DIR = Path(__file__).resolve().parent
-OUTPUT_DIR = Path.cwd().resolve()
-BUILD_DIR = Path(os.environ.get("BUILD_DIR", str(OUTPUT_DIR / "build"))).expanduser().resolve()
-BUILD_TYPE = os.environ.get("BUILD_TYPE", "Debug")
-LOCAL_VCPKG_ROOT = Path(os.environ.get("VCPKG_ROOT", str(OUTPUT_DIR / ".vcpkg"))).expanduser().resolve()
+DEFAULT_LOCAL_BUILD_DIR = Path.cwd().resolve()
 
 def run(args, *, env=None):
     subprocess.run(args, check=True, env=env)
@@ -87,12 +84,27 @@ def parse_args():
         help="Use the vcpkg installation at this prefix instead of bootstrapping a local one.",
     )
     parser.add_argument(
+        "--build-dir",
+        type=Path,
+        help="Use this directory as the local build root. Defaults to the current directory.",
+    )
+    parser.add_argument(
         "--c-compiler",
-        help="Use this C compiler from PATH instead of auto-detecting one.",
+        help="CMAKE_C_COMPILER.",
     )
     parser.add_argument(
         "--cxx-compiler",
-        help="Use this C++ compiler from PATH instead of auto-detecting one.",
+        help="CMAKE_CXX_COMPILER.",
+    )
+    parser.add_argument(
+        "--build-type",
+        default="Release",
+        help="CMAKE_BUILD_TYPE",
+    )
+    parser.add_argument(
+        "--install-prefix",
+        type=Path,
+        help="CMAKE_INSTALL_PREFIX. Defaults to <build-dir>/install.",
     )
     return parser.parse_args()
 
@@ -121,17 +133,26 @@ def resolve_vcpkg_prefix(vcpkg_prefix):
     return vcpkg, vcpkg_root
 
 
-def bootstrap_local_vcpkg():
-    if not LOCAL_VCPKG_ROOT.exists():
-        log(f"Installing vcpkg into {LOCAL_VCPKG_ROOT}")
-        run(["git", "clone", "https://github.com/microsoft/vcpkg.git", str(LOCAL_VCPKG_ROOT)])
+def bootstrap_local_vcpkg(local_vcpkg_dir):
+    if not local_vcpkg_dir.exists():
+        log(f"Installing vcpkg into {local_vcpkg_dir}")
+        run(
+            [
+                "git",
+                "clone",
+                "--depth",
+                "1",
+                "https://github.com/microsoft/vcpkg.git",
+                str(local_vcpkg_dir),
+            ]
+        )
 
-    vcpkg = LOCAL_VCPKG_ROOT / ("vcpkg.exe" if is_windows_like() else "vcpkg")
+    vcpkg = local_vcpkg_dir / ("vcpkg.exe" if is_windows_like() else "vcpkg")
     if is_executable(vcpkg):
-        return vcpkg, LOCAL_VCPKG_ROOT
+        return vcpkg, local_vcpkg_dir
 
-    bootstrap_sh = LOCAL_VCPKG_ROOT / "bootstrap-vcpkg.sh"
-    bootstrap_bat = LOCAL_VCPKG_ROOT / "bootstrap-vcpkg.bat"
+    bootstrap_sh = local_vcpkg_dir / "bootstrap-vcpkg.sh"
+    bootstrap_bat = local_vcpkg_dir / "bootstrap-vcpkg.bat"
     if is_windows_like() and bootstrap_bat.exists():
         run_batch_file(bootstrap_bat, "-disableMetrics")
     elif bootstrap_sh.exists():
@@ -139,22 +160,22 @@ def bootstrap_local_vcpkg():
     elif bootstrap_bat.exists():
         run_batch_file(bootstrap_bat, "-disableMetrics")
     else:
-        print(f"vcpkg is not ready and no bootstrap script was found in {LOCAL_VCPKG_ROOT}", file=sys.stderr)
+        print(f"vcpkg is not ready and no bootstrap script was found in {local_vcpkg_dir}", file=sys.stderr)
         sys.exit(1)
 
     if is_executable(vcpkg):
-        return vcpkg, LOCAL_VCPKG_ROOT
+        return vcpkg, local_vcpkg_dir
 
-    fallback = LOCAL_VCPKG_ROOT / "vcpkg.exe"
+    fallback = local_vcpkg_dir / "vcpkg.exe"
     if is_executable(fallback):
-        return fallback, LOCAL_VCPKG_ROOT
+        return fallback, local_vcpkg_dir
 
-    print(f"vcpkg bootstrap finished, but no vcpkg executable was found in {LOCAL_VCPKG_ROOT}", file=sys.stderr)
+    print(f"vcpkg bootstrap finished, but no vcpkg executable was found in {local_vcpkg_dir}", file=sys.stderr)
     sys.exit(1)
 
 
-def resolve_vcpkg():
-    return bootstrap_local_vcpkg()
+def resolve_vcpkg(local_vcpkg_dir):
+    return bootstrap_local_vcpkg(local_vcpkg_dir)
 
 
 def main():
@@ -164,12 +185,21 @@ def main():
         "VCPKG_DEFAULT_HOST_TRIPLET",
         default_host_triplet(vcpkg_triplet),
     )
+    local_build_dir = args.build_dir.expanduser().resolve() if args.build_dir else DEFAULT_LOCAL_BUILD_DIR
+    local_vcpkg_dir = local_build_dir / "vcpkg"
+    cmake_build_dir = local_build_dir / "build"
     selected_vcpkg = resolve_vcpkg_prefix(args.vcpkg_prefix) if args.vcpkg_prefix else None
+    install_prefix = (
+        args.install_prefix.expanduser().resolve()
+        if args.install_prefix
+        else local_build_dir / "install"
+    )
+    local_build_dir.mkdir(parents=True, exist_ok=True)
 
     if selected_vcpkg:
         vcpkg, vcpkg_root = selected_vcpkg
     else:
-        vcpkg, vcpkg_root = resolve_vcpkg()
+        vcpkg, vcpkg_root = resolve_vcpkg(local_vcpkg_dir)
 
     log(f"Using vcpkg: {vcpkg}")
     if vcpkg_host_triplet:
@@ -177,15 +207,15 @@ def main():
     else:
         log(f"Configuring SDL3 manifest for {vcpkg_triplet}")
 
-    log(f"Configuring a fresh build in {BUILD_DIR}")
-    shutil.rmtree(BUILD_DIR, ignore_errors=True)
+    log(f"Configuring a fresh build in {cmake_build_dir}")
+    shutil.rmtree(cmake_build_dir, ignore_errors=True)
     cmake_configure_args = [
         "cmake",
         "-S",
         str(SOURCE_DIR),
         "-B",
-        str(BUILD_DIR),
-        f"-DCMAKE_BUILD_TYPE={BUILD_TYPE}",
+        str(cmake_build_dir),
+        f"-DCMAKE_BUILD_TYPE={args.build_type}",
         f"-DCMAKE_TOOLCHAIN_FILE={vcpkg_toolchain(vcpkg_root)}",
         f"-DVCPKG_TARGET_TRIPLET={vcpkg_triplet}",
     ]
@@ -195,11 +225,12 @@ def main():
         cmake_configure_args.append(f"-DCMAKE_C_COMPILER={args.c_compiler}")
     if args.cxx_compiler:
         cmake_configure_args.append(f"-DCMAKE_CXX_COMPILER={args.cxx_compiler}")
+    cmake_configure_args.append(f"-DCMAKE_INSTALL_PREFIX={install_prefix}")
     run(cmake_configure_args)
 
     log("Building")
-    run(["cmake", "--build", str(BUILD_DIR), "--config", BUILD_TYPE, "--parallel"])
-    log(f"Built: {BUILD_DIR / 'bin/sdl3_vcpkg_test'}")
+    run(["cmake", "--build", str(cmake_build_dir), "--config", args.build_type, "--parallel"])
+    log(f"Built: {cmake_build_dir / 'bin/sdl3_vcpkg_test'}")
 
 
 if __name__ == "__main__":
