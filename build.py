@@ -301,20 +301,13 @@ def main():
     )
     selected_vcpkg = resolve_vcpkg_prefix(args.vcpkg_prefix) if args.vcpkg_prefix else None
 
-    install_platform_dependencies(install_deps=args.install_deps)
+    # install_platform_dependencies(install_deps=args.install_deps)
     need_tool("git", install_deps=args.install_deps)
+    need_tool("zip", install_deps=args.install_deps)
     need_tool("curl", install_deps=args.install_deps)
     need_tool("cmake", install_deps=args.install_deps)
-    need_any_tool(
-        ["cc", "gcc", "clang", "cl"],
-        "C compiler (cc, gcc, clang, or cl)",
-        install_deps=args.install_deps,
-    )
-    need_any_tool(
-        ["c++", "g++", "clang++", "cl"],
-        "C++ compiler (c++, g++, clang++, or cl)",
-        install_deps=args.install_deps,
-    )
+    need_any_tool(["cc", "gcc", "clang", "cl"], "C compiler (cc, gcc, clang, or cl)", install_deps=args.install_deps)
+    need_any_tool(["c++", "g++", "clang++", "cl"], "C++ compiler (c++, g++, clang++, or cl)", install_deps=args.install_deps)
 
     if selected_vcpkg:
         vcpkg, vcpkg_root = selected_vcpkg
