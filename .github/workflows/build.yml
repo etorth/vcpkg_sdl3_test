@@ -1,0 +1,122 @@
+name: Build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  linux:
+    name: Native Linux
+    runs-on: ubuntu-26.04
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install system packages
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            autoconf \
+            autoconf-archive \
+            automake \
+            build-essential \
+            cmake \
+            curl \
+            git \
+            libasound2-dev \
+            libdbus-1-dev \
+            libdecor-0-dev \
+            libegl1-mesa-dev \
+            libgl1-mesa-dev \
+            libibus-1.0-dev \
+            libjack-jackd2-dev \
+            libpipewire-0.3-dev \
+            libpulse-dev \
+            libtool \
+            libudev-dev \
+            libwayland-dev \
+            libx11-dev \
+            libxcursor-dev \
+            libxext-dev \
+            libxft-dev \
+            libxi-dev \
+            libxinerama-dev \
+            libxkbcommon-dev \
+            libxrandr-dev \
+            libxss-dev \
+            nasm \
+            ninja-build \
+            pkg-config \
+            tar \
+            unzip \
+            wayland-protocols \
+            zip
+
+      - name: Restore vcpkg binary cache
+        uses: actions/cache@v4
+        with:
+          path: .vcpkg-cache
+          key: linux-vcpkg-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**') }}
+          restore-keys: |
+            linux-vcpkg-
+
+      - name: Build
+        run: |
+          ./build.py --build-dir "$RUNNER_TEMP/sdl3-vcpkg-test-linux" --build-type Release
+
+      - name: Upload install tree
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdl3-vcpkg-test-linux
+          path: ${{ runner.temp }}/sdl3-vcpkg-test-linux/install
+
+  mingw-ucrt64:
+    name: MinGW UCRT64
+    runs-on: windows-latest
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
+      VCPKG_DEFAULT_TRIPLET: x64-mingw-static
+      VCPKG_DEFAULT_HOST_TRIPLET: x64-mingw-static
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up MSYS2 UCRT64
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            base-devel
+            git
+            unzip
+            zip
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-curl
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-python
+
+      - name: Restore vcpkg binary cache
+        uses: actions/cache@v4
+        with:
+          path: .vcpkg-cache
+          key: mingw-ucrt64-vcpkg-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'ports/**') }}
+          restore-keys: |
+            mingw-ucrt64-vcpkg-
+
+      - name: Build
+        shell: msys2 {0}
+        run: |
+          build_root="$(cygpath -u "$RUNNER_TEMP")/sdl3-vcpkg-test-ucrt64"
+          python ./build.py --build-dir "$build_root" --build-type Release
+
+      - name: Upload install tree
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdl3-vcpkg-test-mingw-ucrt64
+          path: ${{ runner.temp }}/sdl3-vcpkg-test-ucrt64/install
